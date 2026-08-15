@@ -42,17 +42,23 @@ class ComfyUIClient:
     def __init__(self, config: Dict[str, Any]):
         from .config_utils import PROJECT_ROOT, resolve_path
 
-        cfg = config.get("comfyui", {}) or {}
+        # 合并顶层 comfyui 与 minimax_h3.comfyui；后者优先级更高（README 承诺的语义）
+        top_cfg = config.get("comfyui", {}) or {}
+        mh3_cfg = (config.get("minimax_h3") or {}).get("comfyui") or {}
+        cfg = {**top_cfg, **mh3_cfg}
+        top_mapping = {k.upper(): v for k, v in (top_cfg.get("node_mapping") or {}).items()}
+        mh3_mapping = {k.upper(): v for k, v in (mh3_cfg.get("node_mapping") or {}).items()}
         self.base_url = str(cfg.get("base_url", "http://127.0.0.1:8188")).rstrip("/")
         self.poll_interval = float(cfg.get("poll_interval_seconds", 2))
-        self.timeout = float(cfg.get("timeout_seconds", 600))
+        self.timeout = float(cfg.get("timeout_seconds", 7200))
         self.client_id = str(cfg.get("client_id", "novel2video"))
         self.workflow_template_path = resolve_path(cfg.get(
             "workflow_template", "workflow_templates/minimax_h3_workflow.json"))
         self.workflow_dir = resolve_path(cfg.get("workflow_dir", "workflow_templates"))
         _ff = cfg.get("first_frame_workflow", "")
         self.first_frame_workflow_path = resolve_path(_ff) if _ff else None
-        self.config_node_mapping = {k.upper(): v for k, v in (cfg.get("node_mapping") or {}).items()}
+        # minimax_h3.comfyui.node_mapping 覆盖顶层 comfyui.node_mapping
+        self.config_node_mapping = {**top_mapping, **mh3_mapping}
         self.input_name_overrides = cfg.get("input_name_overrides") or {}
         self.minimax_cfg = config.get("minimax", {}) or {}
         self.scan_cache_path = PROJECT_ROOT / "cache" / "comfyui_scan_cache.json"
@@ -268,7 +274,11 @@ class ComfyUIClient:
         if not p.exists():
             raise ComfyUIError(f"工作流模板不存在：{p}")
         data = load_workflow_json(p)
-        api = to_api_format(data)
+        try:
+            oi = self.get_object_info()
+        except Exception:
+            oi = None
+        api = to_api_format(data, object_info=oi)
         log.info("已加载工作流：%s（%d 个节点，%s 格式）",
                  p, len(api), "UI→API" if data is not api else "API")
         return api
@@ -382,13 +392,66 @@ class ComfyUIClient:
             elif ct == mapping.get("MODEL_LOADER"):
                 self._fill_model_loader(node, info)
             elif mapping.get("SAVE_VIDEO") and ct == mapping["SAVE_VIDEO"]:
-                self._fill_node_inputs(node, {"filename_prefix": shot_id}, info)
+                self._fill_node_inputs(
+                    node, {"filename_prefix": "video/" + shot_id}, info)
 
         if not filled_video:
             raise ComfyUIError(
                 f"工作流中未找到可填充的视频生成节点（TEXT_TO_VIDEO={mapping.get('TEXT_TO_VIDEO')}, "
                 f"IMAGE_TO_VIDEO={mapping.get('IMAGE_TO_VIDEO')}）。请检查工作流是否包含 MiniMax 视频生成节点。")
+        self._fix_image_inputs(workflow, info)
         return workflow
+
+    # ------------------------------------------------------------------
+    # IMAGE 输入适配：start_image/end_image 等本地文件路径需上传到 ComfyUI
+    # 并通过 LoadImage 节点转为张量（内置 MiniMaxH3ImageToVideo 的 first_frame
+    # 等输入不接受字符串路径）。
+    # ------------------------------------------------------------------
+    def _fix_image_inputs(self, workflow: Dict[str, Any],
+                          info: Dict[str, Any]) -> None:
+        existing = [int(i) for i in workflow.keys() if str(i).isdigit()]
+        next_id = (max(existing) + 1) if existing else 1
+        pending = []  # (node, input_key, file_path)
+        for node in workflow.values():
+            ct = node.get("class_type", "")
+            spec = info.get(ct, {}).get("input", {}) or {}
+            all_in = {**spec.get("required", {}), **spec.get("optional", {})}
+            for k, v in list(node.get("inputs", {}).items()):
+                if not isinstance(v, str) or k not in all_in:
+                    continue
+                entry = all_in.get(k)
+                type_name = entry[0] if (isinstance(entry, list) and entry
+                                         and isinstance(entry[0], str)) else ""
+                type_name = type_name.upper()
+                if "IMAGE" not in type_name and "LATENT" not in type_name:
+                    continue  # COMBO（选项列表）与普通字符串输入跳过
+                pending.append((node, k, v))
+        for node, k, v in pending:
+            name = self._upload_image(v)
+            load_id = str(next_id)
+            next_id += 1
+            workflow[load_id] = {"class_type": "LoadImage",
+                                 "inputs": {"image": name}}
+            node["inputs"][k] = [load_id, 0]
+            log.info("首帧/尾帧已上传并接入 LoadImage(%s)：%s", load_id, name)
+
+    def _upload_image(self, path: str) -> str:
+        from pathlib import Path
+        p = Path(path)
+        if not p.exists():
+            raise ComfyUIError(f"参考图片不存在：{path}")
+        suffix = p.suffix.lower()
+        mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg",
+                "png": "image/png", "webp": "image/webp"}.get(suffix.lstrip("."), "image/png")
+        with open(p, "rb") as f:
+            r = self.session.post(
+                self._url("/upload/image"),
+                files={"image": (p.name, f, mime)},
+                data={"overwrite": "true", "type": "input"},
+                timeout=120)
+        r.raise_for_status()
+        name = r.json().get("name") or p.name
+        return name
 
     def _fill_model_loader(self, node: Dict[str, Any], info: Dict[str, Any]) -> None:
         spec = info.get(node.get("class_type", ""), {}).get("input", {})
@@ -608,6 +671,18 @@ class ComfyUIClient:
                 inputs.pop(key)
                 log.debug("移除未解析占位输入 %s.%s", node.get("class_type"), key)
 
+    def cancel_current(self) -> None:
+        """请求 ComfyUI 中断当前任务（重试前调用，避免任务堆积）。"""
+        try:
+            r = self.session.post(self._url("/interrupt"), json={}, timeout=10)
+            if r.status_code < 400:
+                log.warning("已请求 ComfyUI /interrupt 取消当前任务。")
+            else:
+                log.warning("ComfyUI /interrupt 返回 HTTP %s：%s",
+                            r.status_code, r.text[:200])
+        except Exception as exc:
+            log.warning("请求 ComfyUI /interrupt 失败：%s", exc)
+
     def _parse_resolution(self) -> Tuple[Optional[int], Optional[int], str]:
         res = str(self.minimax_cfg.get("resolution", "1280x720"))
         m = re.match(r'(\d+)\s*[xX×]\s*(\d+)', res)
@@ -622,10 +697,12 @@ class ComfyUIClient:
         payload = {"prompt": workflow, "client_id": self.client_id}
         try:
             r = self.session.post(self._url("/prompt"), json=payload, timeout=30)
-            r.raise_for_status()
-            data = r.json()
         except Exception as exc:
             raise ComfyUIError(f"提交 /prompt 失败：{exc}") from exc
+        if r.status_code >= 400:
+            raise ComfyUIError(
+                f"提交 /prompt 失败 HTTP {r.status_code}：{r.text[:1000]}")
+        data = r.json()
         prompt_id = data.get("prompt_id")
         if not prompt_id:
             raise ComfyUIError(f"ComfyUI /prompt 返回异常：{data}")

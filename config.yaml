@@ -16,6 +16,7 @@ minimax_h3:
   # provider 为 local_comfyui / remote_comfyui 时生效：
   comfyui:
     base_url: "http://127.0.0.1:8188"
+    timeout_seconds: 7200
     # 工作流目录：扫描该目录下的工作流 JSON 供选择/接入
     workflow_dir: "workflow_templates"
     # 节点映射：留空则启动时通过 /object_info 自动发现
@@ -37,7 +38,7 @@ minimax_h3:
     model: "MiniMax-H3"
     create_path: "/video_generation"
     query_path: "/query/video_generation"
-    timeout_seconds: 600
+    timeout_seconds: 7200
     poll_interval_seconds: 3
 
 # ------------------------------------------------------------
@@ -46,7 +47,7 @@ minimax_h3:
 comfyui:
   base_url: "http://127.0.0.1:8188"
   poll_interval_seconds: 2
-  timeout_seconds: 600
+  timeout_seconds: 7200
   client_id: "novel2video"
   workflow_template: "workflow_templates/minimax_h3_workflow.json"
   workflow_dir: "workflow_templates"
@@ -80,7 +81,9 @@ llm:
   base_url: "https://api.openai.com/v1"
   model: "gpt-4o-mini"
   temperature: 0.4
-  timeout_seconds: 120
+  max_tokens: 64000              # 复杂分镜 JSON 较大，避免截断
+  seed: ""                       # 可选整数，用于复现分镜
+  timeout_seconds: 600
 
 storyboard:
   mode: "auto"

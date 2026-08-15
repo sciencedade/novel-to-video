@@ -41,8 +41,13 @@ def is_api_format(data: Dict[str, Any]) -> bool:
     return any(isinstance(v, dict) and "class_type" in v for v in data.values())
 
 
-def ui_to_api(data: Dict[str, Any]) -> Dict[str, Any]:
-    """把 ComfyUI 界面导出格式转换为 API 格式。"""
+def ui_to_api(data: Dict[str, Any], object_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """把 ComfyUI 界面导出格式转换为 API 格式。
+
+    - 只把 widgets_values 填充给带 widget 标记的输入（可选图像输入如 first_frame
+      无 widget 标记，保持缺省，避免错配）
+    - 跳过前端节点（MarkdownNote 等）与后端不存在的节点
+    """
     nodes = data.get("nodes") or []
     links = data.get("links") or []
     link_map: Dict[int, list] = {link[0]: link for link in links if isinstance(link, list) and link}
@@ -55,6 +60,8 @@ def ui_to_api(data: Dict[str, Any]) -> Dict[str, Any]:
         class_type = node.get("type")
         if node_id is None or not class_type:
             continue
+        if object_info is not None and class_type not in object_info:
+            continue  # 前端节点/未安装插件：后端不可见，跳过
         new_id = str(node_id)
         inputs: Dict[str, Any] = {}
         widgets = node.get("widgets_values") or []
@@ -65,23 +72,26 @@ def ui_to_api(data: Dict[str, Any]) -> Dict[str, Any]:
             name = inp.get("name")
             if not name:
                 continue
+            if name == "upload":
+                continue  # LoadImage 的上传隐藏输入，API 格式不接受
             link_id = inp.get("link")
             if link_id is not None and link_id in link_map:
                 link = link_map[link_id]
                 # links: [link_id, from_node, from_slot, to_node, to_slot, type]
                 inputs[name] = [str(link[1]), int(link[2])]
-            else:
-                if widget_idx < len(widgets):
-                    inputs[name] = widgets[widget_idx]
-                    widget_idx += 1
+            elif inp.get("widget") is not None and widget_idx < len(widgets):
+                # 只填充真正的 widget 输入；可选图像输入（first_frame 等）无 widget
+                # 标记，跳过并保留缺省
+                inputs[name] = widgets[widget_idx]
+                widget_idx += 1
         api[new_id] = {"class_type": str(class_type), "inputs": inputs}
     return api
 
 
-def to_api_format(data: Dict[str, Any]) -> Dict[str, Any]:
+def to_api_format(data: Dict[str, Any], object_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """统一转换为 API 格式。"""
     if is_ui_format(data):
-        return ui_to_api(data)
+        return ui_to_api(data, object_info=object_info)
     if is_api_format(data):
         return data
     raise ValueError("无法识别的工作流格式：既不是 API 格式，也不是 UI 格式。")

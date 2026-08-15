@@ -78,7 +78,8 @@ class VideoAssembler:
         if vf:
             cmd += ["-vf", vf]
         cmd += ["-c:v", "libx264", "-preset", self.preset, "-crf", self.crf,
-                "-pix_fmt", "yuv420p", "-r", self.fps, "-an", str(out)]
+                "-pix_fmt", "yuv420p", "-r", self.fps, "-c:a", "aac",
+                "-b:a", "192k", str(out)]
         self._run(cmd)
         list_file.unlink(missing_ok=True)
 
@@ -101,7 +102,7 @@ class VideoAssembler:
         if srt_path:
             cmd += ["-vf", self._escape_subtitles_filter(srt_path)]
         cmd += ["-c:v", "libx264", "-preset", self.preset, "-crf", self.crf,
-                "-pix_fmt", "yuv420p", "-an", str(out)]
+                "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", str(out)]
         self._run(cmd)
         list_file.unlink(missing_ok=True)
 

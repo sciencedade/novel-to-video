@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import random
 import subprocess
@@ -74,6 +76,9 @@ class PipelineRunner:
         shots = self.storyboard.get("shots", []) or []
         if not shots:
             raise ValueError("storyboard 中没有镜头，无法运行。")
+
+        # storyboard 数据指纹：换小说/改分镜后，旧 shots/ 文件不再被误判为断点
+        self._fingerprint_ok = self._check_storyboard_fingerprint()
 
         todo: List[Dict[str, Any]] = []
         last_video: Optional[str] = None
@@ -266,6 +271,13 @@ class PipelineRunner:
                 last_error = str(exc)
                 log.warning("[%s] 第 %d 次尝试失败：%s", shot_id, attempt, exc)
                 if attempt < self.max_retries:
+                    # 取消 ComfyUI 端当前任务，避免超时后任务堆积、GPU 白烧、重复出片
+                    cancel = getattr(self.client, "cancel_current", None)
+                    if callable(cancel):
+                        try:
+                            cancel()
+                        except Exception:
+                            pass
                     time.sleep(self.retry_backoff * attempt)
         return {"shot_id": shot_id, "status": "failed",
                 "error": last_error, "attempts": self.max_retries}
@@ -273,7 +285,43 @@ class PipelineRunner:
     # ------------------------------------------------------------------
     # 断点检测与工具
     # ------------------------------------------------------------------
+    def _check_storyboard_fingerprint(self) -> bool:
+        """计算并比对 storyboard 指纹，防止换故事后误用旧镜头拼接。"""
+        shots = self.storyboard.get("shots", []) or []
+        fields = []
+        for shot in shots:
+            fields.append({
+                "shot_id": shot.get("shot_id"),
+                "scene_id": shot.get("scene_id"),
+                "location": shot.get("location"),
+                "narration": shot.get("narration"),
+                "action": shot.get("action"),
+                "duration_seconds": shot.get("duration_seconds"),
+                "spatial_anchors": shot.get("spatial_anchors"),
+                "video_prompt": shot.get("video_prompt"),
+                "reference_image": shot.get("reference_image"),
+            })
+        digest = hashlib.sha256(
+            json.dumps(fields, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        fp_file = self.shots_dir / ".storyboard_fingerprint"
+        old = fp_file.read_text(encoding="utf-8").strip() if fp_file.exists() else None
+        try:
+            fp_file.write_text(digest, encoding="utf-8")
+        except Exception as exc:
+            log.warning("写入 storyboard 指纹失败：%s", exc)
+        if old is None:
+            log.warning("shots/ 目录没有 storyboard 指纹，已有镜头文件将重新生成，避免误拼接。")
+            return False
+        if old != digest:
+            log.warning("storyboard 已变更（指纹不匹配），旧镜头文件将被忽略并重新生成。")
+            return False
+        return True
+
     def _is_done(self, shot: Dict[str, Any]) -> bool:
+        # 数据指纹校验：storyboard 变更后旧镜头文件不再视为有效断点
+        if not getattr(self, "_fingerprint_ok", False):
+            return False
         path = self._existing_output(shot)
         if not path:
             return False

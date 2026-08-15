@@ -43,7 +43,7 @@ DEFAULTS: Dict[str, Any] = {
     "comfyui": {
         "base_url": "http://127.0.0.1:8188",
         "poll_interval_seconds": 2,
-        "timeout_seconds": 600,
+        "timeout_seconds": 7200,
         "client_id": "novel2video",
         "workflow_template": "workflow_templates/minimax_h3_workflow.json",
         "workflow_dir": "workflow_templates",
@@ -70,7 +70,7 @@ DEFAULTS: Dict[str, Any] = {
             "model": "MiniMax-H3",
             "create_path": "/video_generation",
             "query_path": "/query/video_generation",
-            "timeout_seconds": 600,
+            "timeout_seconds": 7200,
             "poll_interval_seconds": 3,
         },
     },
@@ -79,7 +79,9 @@ DEFAULTS: Dict[str, Any] = {
         "base_url": "https://api.openai.com/v1",
         "model": "gpt-4o-mini",
         "temperature": 0.4,
-        "timeout_seconds": 120,
+        "max_tokens": 64000,
+        "seed": "",
+        "timeout_seconds": 600,
     },
     "storyboard": {
         "mode": "auto",

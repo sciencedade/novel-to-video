@@ -46,6 +46,9 @@ class RemoteMiniMaxAPIClient:
     def ping(self) -> bool:
         return bool(self.base_url)
 
+    def cancel_current(self) -> None:
+        """远程 API 模式没有统一的取消接口，超时后不重复提交即可。"""
+
     def build_workflow(self, shot: Dict[str, Any], prompt: str,
                        start_image: Optional[str] = None,
                        end_image: Optional[str] = None,

@@ -352,6 +352,8 @@ llm:
   若使用远程地址，确认端口开放。
 - **`未发现 MODEL_LOADER 节点`**：确认已安装 MiniMax H3 节点包，或在 `config.yaml`
   的 `comfyui.node_mapping` 中手动指定节点 class_type（用 `/object_info` 查询）。
-- **生成视频没有声音**：当前流水线只处理画面，旁白/对白以 `narration` 字段保存在
-  `storyboard.json`，可用 TTS 单独生成后合成；开启 `ffmpeg.subtitles: true` 可先烧录字幕。
+- **生成视频没有声音**：拼接器默认保留原声（`-c:a aac -b:a 192k`）。若开启
+  `ffmpeg.transitions: true`，当前 xfade 转场只处理视频轨、会丢音频（转场模式建议
+  关闭或另行混音）。旁白/对白仍以 `narration` 字段保存在 `storyboard.json`，
+  可单独 TTS 后合成；开启 `ffmpeg.subtitles: true` 可先烧录字幕。
 - **拼接失败**：确认 ffmpeg 在 PATH 中；不同镜头分辨率应保持 `minimax.resolution` 一致。

@@ -310,7 +310,15 @@ class StoryboardGenerator:
                     {"role": "user", "content": user},
                 ],
                 "temperature": float(self.llm_cfg.get("temperature", 0.4)),
+                "max_tokens": int(self.llm_cfg.get("max_tokens", 64000)),
             }
+            # 可选随机种子，便于复现分镜
+            seed = self.llm_cfg.get("seed")
+            if seed not in (None, "", "null"):
+                try:
+                    kwargs["seed"] = int(seed)
+                except (TypeError, ValueError):
+                    log.warning("llm.seed 不是整数，已忽略：%s", seed)
             try:
                 kwargs["response_format"] = {"type": "json_object"}
                 resp = client.chat.completions.create(**kwargs)
@@ -318,7 +326,13 @@ class StoryboardGenerator:
                 kwargs.pop("response_format", None)
                 resp = client.chat.completions.create(**kwargs)
 
-            content = (resp.choices[0].message.content or "").strip()
+            choice = resp.choices[0]
+            if getattr(choice, "finish_reason", None) == "length":
+                log.warning("LLM 输出达到 max_tokens 上限被截断，分镜可能不完整，建议增大 llm.max_tokens。")
+            content = (choice.message.content or "").strip()
+            if not content:
+                log.warning("LLM 返回空 content（推理模型可能把预算花在 reasoning 上），回退本地分镜。")
+                return None
             return self._parse_json(content)
         except Exception as exc:
             log.warning("LLM 调用失败：%s", exc)
@@ -329,6 +343,12 @@ class StoryboardGenerator:
         if content.startswith("```"):
             content = re.sub(r'^```(?:json)?\s*', '', content)
             content = re.sub(r'\s*```$', '', content)
+        content = content.strip()
+        # 容忍前后附加说明文字：提取最外层 JSON 对象
+        start = content.find("{")
+        end = content.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            content = content[start:end + 1]
         try:
             data = json.loads(content)
             return data if isinstance(data, dict) else None
