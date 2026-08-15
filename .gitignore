@@ -1,0 +1,13 @@
+output/
+shots/
+logs/
+cache/
+__pycache__/
+*.pyc
+storyboard.json
+continuity_report.json
+venv/
+build_venv/
+build/
+dist/
+*.spec

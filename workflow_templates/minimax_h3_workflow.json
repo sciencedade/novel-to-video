@@ -1,0 +1,31 @@
+﻿{
+  "1": {
+    "class_type": "__MODEL_LOADER__",
+    "inputs": {
+      "model_name": "__MODEL_NAME__"
+    }
+  },
+  "2": {
+    "class_type": "__TEXT_TO_VIDEO__",
+    "inputs": {
+      "model": ["1", 0],
+      "prompt": "__PROMPT__",
+      "negative_prompt": "__NEGATIVE_PROMPT__",
+      "width": "__WIDTH__",
+      "height": "__HEIGHT__",
+      "fps": "__FPS__",
+      "num_frames": "__NUM_FRAMES__",
+      "seed": "__SEED__",
+      "start_image": "__START_IMAGE__",
+      "end_image": "__END_IMAGE__"
+    }
+  },
+  "3": {
+    "class_type": "__SAVE_VIDEO__",
+    "inputs": {
+      "video": ["2", 0],
+      "filename_prefix": "__SHOT_ID__",
+      "format": "mp4"
+    }
+  }
+}

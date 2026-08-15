@@ -1,0 +1,112 @@
+# ============================================================
+# 小说转视频（ComfyUI + MiniMax H3）配置模板
+# 所有路径均为相对项目根目录的路径，或留空自动检测。
+# ============================================================
+
+# ------------------------------------------------------------
+# MiniMax H3 来源配置（核心）
+# provider 可选：
+#   local_comfyui  - 本地 ComfyUI（默认）
+#   remote_comfyui - 远程 ComfyUI（HTTP 可达的服务器）
+#   remote_api     - MiniMax 官方/第三方 HTTP API
+# ------------------------------------------------------------
+minimax_h3:
+  provider: "local_comfyui"
+
+  # provider 为 local_comfyui / remote_comfyui 时生效：
+  comfyui:
+    base_url: "http://127.0.0.1:8188"
+    # 工作流目录：扫描该目录下的工作流 JSON 供选择/接入
+    workflow_dir: "workflow_templates"
+    # 节点映射：留空则启动时通过 /object_info 自动发现
+    node_mapping:
+      MODEL_LOADER: ""
+      TEXT_TO_VIDEO: ""
+      IMAGE_TO_VIDEO: ""
+      SAVE_VIDEO: ""
+      TEXT_TO_IMAGE: ""
+      SAVE_IMAGE: ""
+
+  # MiniMax 模型名：留空 = 自动扫描/取节点第一个模型
+  model_name: ""
+
+  # provider 为 remote_api 时生效（MiniMax 官方或兼容第三方）：
+  api:
+    base_url: "https://api.minimaxi.com/v1"
+    api_key: ""
+    model: "MiniMax-H3"
+    create_path: "/video_generation"
+    query_path: "/query/video_generation"
+    timeout_seconds: 600
+    poll_interval_seconds: 3
+
+# ------------------------------------------------------------
+# ComfyUI 通用配置（向后兼容；minimax_h3.comfyui 优先级更高）
+# ------------------------------------------------------------
+comfyui:
+  base_url: "http://127.0.0.1:8188"
+  poll_interval_seconds: 2
+  timeout_seconds: 600
+  client_id: "novel2video"
+  workflow_template: "workflow_templates/minimax_h3_workflow.json"
+  workflow_dir: "workflow_templates"
+  first_frame_workflow: "workflow_templates/first_frame_workflow.json"
+  node_mapping:
+    MODEL_LOADER: ""
+    TEXT_TO_VIDEO: ""
+    IMAGE_TO_VIDEO: ""
+    SAVE_VIDEO: ""
+    TEXT_TO_IMAGE: ""
+    SAVE_IMAGE: ""
+  input_name_overrides: {}
+
+# ------------------------------------------------------------
+# 视频生成参数（向后兼容）
+# ------------------------------------------------------------
+minimax:
+  model_name: ""                 # 留空 = 自动扫描/取第一个
+  resolution: "1280x720"
+  fps: 24
+  max_shot_duration: 10
+  seed: -1
+  prompt_style: "cinematic lighting, coherent film style, consistent character appearance"
+  negative_prompt: "blurry, distorted, morphing, flickering, inconsistent geometry, text artifacts"
+
+# ------------------------------------------------------------
+# LLM 分镜（OpenAI 兼容接口）
+# ------------------------------------------------------------
+llm:
+  api_key: ""
+  base_url: "https://api.openai.com/v1"
+  model: "gpt-4o-mini"
+  temperature: 0.4
+  timeout_seconds: 120
+
+storyboard:
+  mode: "auto"
+  segment_duration_seconds: 10
+  chars_per_second: 5
+  use_reference_image: true
+  generate_first_frame: false
+  first_frame_prompt: ""
+
+generation:
+  auto_run: false
+  concurrent_jobs: 1
+  max_retries: 3
+  retry_backoff_seconds: 5
+  output_dir: "output"
+  shots_dir: "shots"
+
+# ffmpeg.path 留空 = 自动从 PATH 检测；检测不到时运行 python wizard.py 手动指定
+ffmpeg:
+  path: ""
+  transitions: false
+  transition_duration: 0.5
+  subtitles: false
+  crf: 18
+  preset: "medium"
+
+logging:
+  level: "INFO"
+  log_dir: "logs"
