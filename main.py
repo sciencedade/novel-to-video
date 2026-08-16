@@ -122,6 +122,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="扫描 ComfyUI 中的 MiniMax 节点与模型，写入缓存并打印结果")
     parser.add_argument("--wizard", action="store_true",
                         help="运行首次运行配置向导")
+    parser.add_argument("--visual-qa", action="store_true",
+                        help="对已有 shots/ 与 storyboard.json 执行画面层视觉质检并写入报告")
     parser.add_argument("--log-level", default=None, help="日志级别：DEBUG/INFO/WARNING/ERROR")
     return parser
 
@@ -182,6 +184,31 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(json.dumps(scan, ensure_ascii=False, indent=2))
         log.info("扫描完成：发现 %d 个 MiniMax 节点，%d 个模型候选。",
                  len(scan.get("nodes", {})), len(scan.get("models", [])))
+        return 0
+
+    # --visual-qa：对已有 shots/ 与 storyboard.json 执行画面层质检
+    if args.visual_qa:
+        storyboard_path = PROJECT_ROOT / "storyboard.json"
+        if not storyboard_path.exists():
+            log.error("storyboard.json 不存在，无法执行视觉质检。请先生成镜头。")
+            return 1
+        with open(storyboard_path, "r", encoding="utf-8") as f:
+            storyboard = json.load(f)
+        shots_dir = PROJECT_ROOT / config.get("generation", {}).get("shots_dir", "shots")
+        from modules.visual_qa import VisualQA
+        vqa = VisualQA(config, storyboard, shots_dir)
+        result = vqa.run()
+        report = {}
+        report_path = PROJECT_ROOT / "continuity_report.json"
+        if report_path.exists():
+            with open(report_path, "r", encoding="utf-8") as f:
+                report = json.load(f)
+        report["visual_qa"] = result
+        write_json(report_path, report)
+        log.info("视觉质检完成：检查 %d 组，漂移告警 %d，镜像告警 %d",
+                 result["summary"]["checked_transitions"],
+                 result["summary"]["drift_warnings"],
+                 result["summary"]["mirror_warnings"])
         return 0
 
     # 2) 读取小说
@@ -273,11 +300,27 @@ def main(argv: Optional[List[str]] = None) -> int:
     else:
         log.warning("没有可拼接的镜头文件。")
 
+    # 5.5) 画面层视觉质检（默认开启）
+    visual_qa_result = None
+    if config.get("visual_qa", {}).get("enabled", True) and shot_files:
+        from modules.visual_qa import VisualQA
+        try:
+            vqa = VisualQA(config, storyboard, shots_dir)
+            visual_qa_result = vqa.run()
+            log.info("视觉质检：检查 %d 组，漂移告警 %d，镜像告警 %d",
+                     visual_qa_result["summary"]["checked_transitions"],
+                     visual_qa_result["summary"]["drift_warnings"],
+                     visual_qa_result["summary"]["mirror_warnings"])
+        except Exception as exc:
+            log.warning("视觉质检失败（不影响成片）：%s", exc)
+
     # 6) 连续性报告
     report = tracker.report
     report["generated_at"] = datetime.now().isoformat(timespec="seconds")
     report["stage"] = "generation"
     report["generation_results"] = results
+    if visual_qa_result is not None:
+        report["visual_qa"] = visual_qa_result
     report["summary"] = {
         "shots_total": len(storyboard.get("shots", []) or []),
         "shots_success": sum(1 for r in results if r.get("status") == "success"),
@@ -288,6 +331,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         "reverse_shots": len(tracker.report.get("reverse_shots", [])),
         "final_video": str(final_path) if final_path.exists() else None,
     }
+    if visual_qa_result is not None:
+        report["summary"]["visual_drift_warnings"] = visual_qa_result["summary"]["drift_warnings"]
+        report["summary"]["visual_mirror_warnings"] = visual_qa_result["summary"]["mirror_warnings"]
     write_json(report_path, report)
 
     failed = report["summary"]["shots_failed"]

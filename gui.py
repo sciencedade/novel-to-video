@@ -389,11 +389,27 @@ class Novel2VideoGUI:
             else:
                 log.warning("没有可拼接的镜头文件。")
 
+            # 4.5) 画面层视觉质检（默认开启）
+            visual_qa_result = None
+            if cfg.get("visual_qa", {}).get("enabled", True) and shot_files:
+                from modules.visual_qa import VisualQA
+                try:
+                    vqa = VisualQA(cfg, storyboard, shots_dir)
+                    visual_qa_result = vqa.run()
+                    log.info("视觉质检：检查 %d 组，漂移告警 %d，镜像告警 %d",
+                             visual_qa_result["summary"]["checked_transitions"],
+                             visual_qa_result["summary"]["drift_warnings"],
+                             visual_qa_result["summary"]["mirror_warnings"])
+                except Exception as exc:
+                    log.warning("视觉质检失败（不影响成片）：%s", exc)
+
             # 5) 报告
             report = tracker.report
             report["generated_at"] = datetime.now().isoformat(timespec="seconds")
             report["stage"] = "generation"
             report["generation_results"] = results
+            if visual_qa_result is not None:
+                report["visual_qa"] = visual_qa_result
             report["summary"] = {
                 "shots_total": len(storyboard.get("shots", []) or []),
                 "shots_success": sum(1 for r in results if r.get("status") == "success"),
@@ -405,6 +421,9 @@ class Novel2VideoGUI:
                 "reverse_shots": len(tracker.report.get("reverse_shots", [])),
                 "final_video": str(final_path) if final_path.exists() else None,
             }
+            if visual_qa_result is not None:
+                report["summary"]["visual_drift_warnings"] = visual_qa_result["summary"]["drift_warnings"]
+                report["summary"]["visual_mirror_warnings"] = visual_qa_result["summary"]["mirror_warnings"]
             write_json(PROJECT_ROOT / "continuity_report.json", report)
 
             failed = report["summary"]["shots_failed"]

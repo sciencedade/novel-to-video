@@ -107,6 +107,14 @@ DEFAULTS: Dict[str, Any] = {
         "crf": 18,
         "preset": "medium",
     },
+    "visual_qa": {
+        "enabled": True,
+        "resize": 64,
+        "hash_size": 16,
+        "drift_threshold": 0.85,
+        "mirror_ratio_threshold": 1.15,
+        "min_file_size_kb": 10,
+    },
     "logging": {
         "level": "INFO",
         "log_dir": "logs",
