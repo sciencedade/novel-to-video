@@ -24,6 +24,10 @@ log = logging.getLogger(__name__)
 SYSTEM_PROMPT = """你是一位资深电影分镜师、视频生成提示词专家和空间连续性监督员。
 你的任务是把小说文本转成可直接用于 MiniMax H3 视频生成的电影分镜表。
 
+语言要求：除 narration 必须逐字引用原文外，其余所有字段（location、characters、
+action、camera、start_frame_prompt、end_frame_prompt、spatial_anchors 等）一律用
+英文输出；video_prompt 中画面描述、镜头语言、空间锚点全部为英文。
+
 必须遵循电影语言规则：
 1. 景别要有变化（远景/全景/中景/近景/特写），机位交代清楚。
 2. 运动方向、视线关系、180 度规则必须自洽。
@@ -115,8 +119,16 @@ class StoryboardGenerator:
     # ------------------------------------------------------------------
     def _auto_shots(self, text: str, max_shot_duration: float) -> List[Dict[str, Any]]:
         """auto 模式：LLM 智能切分。"""
+        target = self.storyboard_cfg.get("target_duration_seconds")
+        target_line = ""
+        if target:
+            target_line = (
+                f"0. 全片总时长控制在 {float(target):.0f} 秒左右，"
+                f"镜头数尽量精简（每镜 4-10 秒）。\n"
+            )
         user = (
             f"请将下面这部小说切分为连续镜头。要求：\n"
+            f"{target_line}"
             f"1. 每个镜头 duration_seconds <= {max_shot_duration} 秒。\n"
             f"2. 所有镜头的 narration 字段必须按顺序、逐字、完整覆盖原文（可跨镜头断句，但不得增删改原文）。\n"
             f"3. 同一场景的 scene_layout 必须一致，spatial_anchors 中的固定设施屏幕方位必须与 scene_layout 一致。\n"
@@ -344,17 +356,50 @@ class StoryboardGenerator:
             content = re.sub(r'^```(?:json)?\s*', '', content)
             content = re.sub(r'\s*```$', '', content)
         content = content.strip()
-        # 容忍前后附加说明文字：提取最外层 JSON 对象
-        start = content.find("{")
-        end = content.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            content = content[start:end + 1]
+        # 容忍前后附加说明文字 / 多段 JSON：只提取第一个完整 JSON 对象
+        candidate = StoryboardGenerator._extract_first_json_object(content)
+        if candidate is None:
+            candidate = content
         try:
-            data = json.loads(content)
+            data = json.loads(candidate)
             return data if isinstance(data, dict) else None
         except Exception as exc:
-            log.warning("LLM 返回的 JSON 解析失败：%s", exc)
+            log.warning("LLM 返回的 JSON 解析失败：%s\n原文前 500 字：%s",
+                        exc, content[:500])
             return None
+
+    @staticmethod
+    def _extract_first_json_object(text: str) -> Optional[str]:
+        """提取文本中第一个完整 JSON 对象字符串。
+
+        正确处理字符串内的花括号与转义；遇到第一个配平的 '}' 即返回，
+        因此 LLM 输出多个对象/前后缀时不会触发 Extra data。
+        """
+        start = text.find("{")
+        if start == -1:
+            return None
+        depth = 0
+        in_string = False
+        escape = False
+        for i in range(start, len(text)):
+            ch = text[i]
+            if in_string:
+                if escape:
+                    escape = False
+                elif ch == "\\":
+                    escape = True
+                elif ch == '"':
+                    in_string = False
+                continue
+            if ch == '"':
+                in_string = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start:i + 1]
+        return None
 
     # ------------------------------------------------------------------
     # 文本切分
