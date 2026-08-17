@@ -91,6 +91,7 @@ DEFAULTS: Dict[str, Any] = {
         "generate_first_frame": False,
         "first_frame_prompt": "",
     },
+    "characters": [],  # 角色定妆照资产：[{name, reference_image, description, forbidden_changes}]
     "generation": {
         "auto_run": False,
         "concurrent_jobs": 1,

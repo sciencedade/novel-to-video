@@ -70,6 +70,8 @@ class StoryboardGenerator:
         self.llm_cfg = config.get("llm", {})
         self.storyboard_cfg = config.get("storyboard", {})
         self.minimax_cfg = config.get("minimax", {})
+        self.characters_cfg = config.get("characters", []) or []
+        self._character_map = {c.get("name"): c for c in self.characters_cfg if c.get("name")}
         self._openai_client = None
 
     # ------------------------------------------------------------------
@@ -283,6 +285,7 @@ class StoryboardGenerator:
 
     def _apply_continuity(self, shots: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """顺序跑一遍 ContinuityTracker：填充/修正 spatial_anchors、continuity_input/output、video_prompt。"""
+        self._inject_character_references(shots)
         tracker = ContinuityTracker()
         for shot in shots:
             tracker.prepare_shot(shot)
@@ -295,6 +298,36 @@ class StoryboardGenerator:
             "reverse_shots": len(tracker.report.get("reverse_shots", [])),
         }
         return shots
+
+    def _inject_character_references(self, shots: List[Dict[str, Any]]) -> None:
+        """把 config.characters 里的定妆照/描述/禁止变化项注入每个镜头。
+
+        - 镜头若没有显式 reference_image，则用角色定妆照作为首帧参考
+        - character_references 记录每个角色的参考图与描述
+        - forbidden_changes 会进入 video_prompt，作为“提示词锁定”的负面约束
+        """
+        for shot in shots:
+            shot.setdefault("character_references", {})
+            forbidden = list(shot.get("forbidden_changes") or [])
+            for char in shot.get("characters", []) or []:
+                info = self._character_map.get(char)
+                if not info:
+                    continue
+                ref = str(info.get("reference_image") or "")
+                shot["character_references"][char] = {
+                    "reference_image": ref,
+                    "description": str(info.get("description") or ""),
+                    "forbidden_changes": str(info.get("forbidden_changes") or ""),
+                }
+                if ref and not shot.get("reference_image"):
+                    shot["reference_image"] = ref
+                raw = str(info.get("forbidden_changes") or "")
+                for item in raw.split(","):
+                    item = item.strip()
+                    if item and item not in forbidden:
+                        forbidden.append(item)
+            if forbidden:
+                shot["forbidden_changes"] = forbidden
 
     # ------------------------------------------------------------------
     # LLM 调用

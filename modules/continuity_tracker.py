@@ -344,6 +344,18 @@ class ContinuityTracker:
                 f"运动方向{self._cn(motion)}。"
             )
 
+        # 角色定妆描述（提示词锁定第 2 层）
+        char_refs = shot.get("character_references") or {}
+        for char, info in char_refs.items():
+            desc = (info or {}).get("description") or ""
+            if desc:
+                lock.append(f"角色 {char} 定妆描述：{desc}。")
+
+        # 禁止变化项（负面提示词锁定）
+        forbidden = shot.get("forbidden_changes") or []
+        if forbidden:
+            lock.append("禁止变化项：" + "，".join(forbidden) + "。")
+
         camera_side = shot.get("camera_side") or "A"
         if camera_side == "B":
             lock.append(
