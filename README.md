@@ -236,9 +236,24 @@ characters:
     forbidden_changes: "no beard, no glasses, no hair change, no costume change"
 ```
 
-工作流模板：`workflow_templates/character_sheet_workflow.json`（角色占位符），
+工作流模板：`workflow_templates/character_sheet_mage_flow_t2i.json`（默认，Mage-Flow T2I），
 实际节点名由 ComfyUI `/object_info` 自动发现。若你的生图节点不在 `node_mapping`
 里，请先运行 `python main.py --scan` 查看 `TEXT_TO_IMAGE / SAVE_IMAGE` 映射。
+
+### 用 IPAdapter 统一风格（可选）
+
+在 `character_sheet` 里设置一张风格参考图，生成定妆照时会自动切换到
+`character_sheet_mage_flow_ipadapter.json`，用 IPAdapter 统一所有角色画风：
+
+```yaml
+character_sheet:
+  style_reference_image: "assets/style_ref.png"
+  ipadapter_file: "ip-adapter-faceid.sdxl.bin"
+  ipadapter_weight: 0.6
+```
+
+- 未设置 `style_reference_image`：使用 Mage-Flow T2I 直接生成
+- 设置后：自动上传参考图 → LoadImage → IPAdapterAdvanced → KSampler
 
 ## 快速开始
 

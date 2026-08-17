@@ -93,11 +93,19 @@ DEFAULTS: Dict[str, Any] = {
     },
     "characters": [],  # 角色定妆照资产：[{name, reference_image, description, forbidden_changes}]
     "character_sheet": {
-        "workflow_template": "workflow_templates/character_sheet_workflow.json",
+        "workflow_template": "workflow_templates/character_sheet_mage_flow_t2i.json",
+        "ipadapter_workflow_template": "workflow_templates/character_sheet_mage_flow_ipadapter.json",
         "output_dir": "assets/characters",
         "resolution": "1024x1024",
         "default_angles": ["front", "side", "full"],
         "prompt_template": "character design sheet, {name}, {angle} view, plain background, even soft lighting, high quality",
+        "negative_prompt": "",
+        "style_reference_image": "",
+        "unet_name": "mage_flow_int8_convrot.safetensors",
+        "clip_name": "qwen3vl_4b_bf16.safetensors",
+        "vae_name": "mage_flow_vae_bf16.safetensors",
+        "ipadapter_file": "ip-adapter-faceid.sdxl.bin",
+        "ipadapter_weight": 0.6,
     },
     "generation": {
         "auto_run": False,

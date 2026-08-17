@@ -453,6 +453,41 @@ class ComfyUIClient:
         name = r.json().get("name") or p.name
         return name
 
+    def upload_image(self, path: str) -> str:
+        """上传本地图片到 ComfyUI input 目录，返回文件名。"""
+        return self._upload_image(path)
+
+    def fill_placeholders(self, workflow: Dict[str, Any],
+                          values: Dict[str, Any]) -> None:
+        """把工作流输入中的 __KEY__ 占位符替换为实际值。
+
+        支持精确占位（直接赋原值，数字/布尔保持类型）与字符串内嵌占位。
+        """
+        for node in workflow.values():
+            for key, val in list(node.get("inputs", {}).items()):
+                if not isinstance(val, str):
+                    continue
+                # 精确占位符：__NAME__
+                if val.startswith("__") and val.endswith("__"):
+                    name = val.strip("_").upper()
+                    if name in values:
+                        node["inputs"][key] = values[name]
+                        continue
+                # 内嵌占位符：前缀___xxx__
+                import re
+                new_val = re.sub(
+                    r'__([A-Z0-9_]+)__',
+                    lambda m: str(values.get(m.group(1), m.group(0))),
+                    val,
+                )
+                node["inputs"][key] = new_val
+        # 移除仍未解析的占位符，避免提交时报错
+        for node in workflow.values():
+            for key in list(node.get("inputs", {}).keys()):
+                val = node["inputs"][key]
+                if isinstance(val, str) and val.startswith("__") and val.endswith("__"):
+                    node["inputs"].pop(key)
+
     def _fill_model_loader(self, node: Dict[str, Any], info: Dict[str, Any]) -> None:
         spec = info.get(node.get("class_type", ""), {}).get("input", {})
         required = spec.get("required", {})
