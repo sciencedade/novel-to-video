@@ -805,20 +805,42 @@ class ComfyUIClient:
     # ------------------------------------------------------------------
     # 首帧图像生成（可选）
     # ------------------------------------------------------------------
-    def generate_first_frame(self, prompt: str, shot_id: str,
-                             dest_dir: str | Path = "shots/frames") -> Optional[str]:
-        if not self.first_frame_workflow_path or not self.first_frame_workflow_path.exists():
-            log.info("未配置首帧图像工作流，使用纯文本生成首镜头。")
+    def generate_image(self, prompt: str, prefix: str,
+                       dest_dir: str | Path = "shots/frames",
+                       workflow_path: Optional[str | Path] = None,
+                       width: Optional[int] = None,
+                       height: Optional[int] = None,
+                       seed: Optional[int] = None,
+                       resolution: Optional[str] = None) -> Optional[str]:
+        """通过 ComfyUI 文生图工作流生成一张图并下载到本地。
+
+        参数：
+        - prompt: 图像提示词
+        - prefix: 输出文件前缀
+        - dest_dir: 下载目录
+        - workflow_path: 文生图工作流 JSON（默认 first_frame_workflow）
+        - width/height/resolution: 图像尺寸；缺省用 minimax.resolution
+        - seed: 随机种子
+        """
+        wf_path = Path(workflow_path) if workflow_path else self.first_frame_workflow_path
+        if not wf_path or not wf_path.exists():
+            log.info("未配置图像生成工作流：%s", wf_path)
             return None
         try:
-            workflow = self.load_workflow(self.first_frame_workflow_path)
+            workflow = self.load_workflow(wf_path)
             self.resolve_workflow(workflow)
         except Exception as exc:
-            log.warning("首帧图像工作流不可用：%s", exc)
+            log.warning("图像生成工作流不可用：%s", exc)
             return None
 
         info = self.get_object_info()
-        width, height, _ = self._parse_resolution()
+        dw, dh, dres = self._parse_resolution()
+        if width is None:
+            width = dw
+        if height is None:
+            height = dh
+        if resolution is None:
+            resolution = dres
         mapping = self.node_mapping
         for node in workflow.values():
             ct = node.get("class_type", "")
@@ -831,7 +853,7 @@ class ComfyUIClient:
                         values[key] = prompt
                         break
                 if "resolution" in all_inputs:
-                    values["resolution"] = str(self.minimax_cfg.get("resolution", "1280x720"))
+                    values["resolution"] = resolution
                 else:
                     for key in ("width", "image_width"):
                         if key in all_inputs:
@@ -841,15 +863,26 @@ class ComfyUIClient:
                         if key in all_inputs:
                             values[key] = height
                             break
+                if seed is not None:
+                    for key in ("seed", "noise_seed"):
+                        if key in all_inputs:
+                            values[key] = seed
+                            break
                 self._fill_node_inputs(node, values, info)
             elif mapping.get("SAVE_IMAGE") and ct == mapping["SAVE_IMAGE"]:
-                self._fill_node_inputs(node, {"filename_prefix": f"{shot_id}_first_frame"}, info)
+                self._fill_node_inputs(node, {"filename_prefix": prefix}, info)
 
         try:
             prompt_id = self.submit_workflow(workflow)
             entry = self.wait_for_completion(prompt_id)
-            path = self.download_output(entry, Path(dest_dir), f"{shot_id}_first_frame")
+            path = self.download_output(entry, Path(dest_dir), prefix)
             return str(path) if path else None
         except Exception as exc:
-            log.warning("首帧图像生成失败：%s，回退纯文本生成。", exc)
+            log.warning("图像生成失败：%s", exc)
             return None
+
+    def generate_first_frame(self, prompt: str, shot_id: str,
+                             dest_dir: str | Path = "shots/frames") -> Optional[str]:
+        return self.generate_image(prompt, f"{shot_id}_first_frame",
+                                   dest_dir=dest_dir,
+                                   workflow_path=self.first_frame_workflow_path)

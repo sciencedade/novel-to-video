@@ -212,6 +212,34 @@ comfyui:
 `python main.py --scan` 的扫描结果（`cache/comfyui_scan_cache.json`）中也包含
 `workflows` 字段，列出每个工作流的格式、节点数与识别到的 MiniMax 节点。
 
+## 角色定妆照
+
+### 用 ComfyUI 生成定妆照
+
+CLI：
+
+```bash
+python main.py --generate-character-sheet --character-name 林晚 \
+  --character-angles front,side,full \
+  --character-prompt "young woman, oval face, black long hair, beige coat, character design sheet, plain background"
+```
+
+GUI：点击“生成定妆照”按钮，填写角色名/提示词/角度即可。
+
+生成结果保存在 `assets/characters/<角色名>/`，并把 `reference_image` 指到其中一张：
+
+```yaml
+characters:
+  - name: "林晚"
+    reference_image: "assets/characters/林晚/front.png"
+    description: "young woman, oval face, black long hair, beige coat"
+    forbidden_changes: "no beard, no glasses, no hair change, no costume change"
+```
+
+工作流模板：`workflow_templates/character_sheet_workflow.json`（角色占位符），
+实际节点名由 ComfyUI `/object_info` 自动发现。若你的生图节点不在 `node_mapping`
+里，请先运行 `python main.py --scan` 查看 `TEXT_TO_IMAGE / SAVE_IMAGE` 映射。
+
 ## 快速开始
 
 ```bash

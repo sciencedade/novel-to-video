@@ -92,6 +92,13 @@ DEFAULTS: Dict[str, Any] = {
         "first_frame_prompt": "",
     },
     "characters": [],  # 角色定妆照资产：[{name, reference_image, description, forbidden_changes}]
+    "character_sheet": {
+        "workflow_template": "workflow_templates/character_sheet_workflow.json",
+        "output_dir": "assets/characters",
+        "resolution": "1024x1024",
+        "default_angles": ["front", "side", "full"],
+        "prompt_template": "character design sheet, {name}, {angle} view, plain background, even soft lighting, high quality",
+    },
     "generation": {
         "auto_run": False,
         "concurrent_jobs": 1,

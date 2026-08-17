@@ -124,6 +124,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help="运行首次运行配置向导")
     parser.add_argument("--visual-qa", action="store_true",
                         help="对已有 shots/ 与 storyboard.json 执行画面层视觉质检并写入报告")
+    parser.add_argument("--generate-character-sheet", action="store_true",
+                        help="用 ComfyUI 文生图工作流生成角色定妆照")
+    parser.add_argument("--character-name", default=None, help="角色名（配合 --generate-character-sheet）")
+    parser.add_argument("--character-prompt", default=None, help="定妆照提示词（可选）")
+    parser.add_argument("--character-angles", default=None,
+                        help="定妆照角度，逗号分隔，如 front,side,full（默认 front,side,full）")
     parser.add_argument("--log-level", default=None, help="日志级别：DEBUG/INFO/WARNING/ERROR")
     return parser
 
@@ -209,6 +215,29 @@ def main(argv: Optional[List[str]] = None) -> int:
                  result["summary"]["checked_transitions"],
                  result["summary"]["drift_warnings"],
                  result["summary"]["mirror_warnings"])
+        return 0
+
+    # --generate-character-sheet：用 ComfyUI 生成角色定妆照
+    if args.generate_character_sheet:
+        if config.get("_provider") == "remote_api":
+            log.error("remote_api 模式没有 ComfyUI 生图能力，无法生成定妆照。")
+            return 1
+        name = args.character_name
+        if not name:
+            log.error("请用 --character-name 指定角色名。")
+            return 1
+        angles = None
+        if args.character_angles:
+            angles = [a.strip() for a in args.character_angles.split(",") if a.strip()]
+        from modules.character_sheet_generator import CharacterSheetGenerator
+        gen = CharacterSheetGenerator(config)
+        try:
+            results = gen.generate(name, prompt=args.character_prompt, angles=angles)
+        except Exception as exc:
+            log.error("定妆照生成失败：%s", exc)
+            return 1
+        print(json.dumps(results, ensure_ascii=False, indent=2))
+        log.info("定妆照生成完成：%s", ", ".join(r["path"] for r in results))
         return 0
 
     # 2) 读取小说

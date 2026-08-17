@@ -171,6 +171,8 @@ class Novel2VideoGUI:
         self.btn_stop.pack(side="left", padx=4)
         self.btn_wizard = ttk.Button(action_frame, text="配置向导", command=self._run_wizard)
         self.btn_wizard.pack(side="left", padx=4)
+        self.btn_character = ttk.Button(action_frame, text="生成定妆照", command=self._on_generate_character_sheet)
+        self.btn_character.pack(side="left", padx=4)
         self.btn_open = ttk.Button(action_frame, text="打开输出目录", command=self._open_output_dir)
         self.btn_open.pack(side="left", padx=4)
 
@@ -280,6 +282,60 @@ class Novel2VideoGUI:
             self.status_var.set("已启动配置向导（独立窗口）。完成后请重启本程序。")
         except Exception as exc:
             messagebox.showerror("配置向导", f"启动配置向导失败：\n{exc}")
+
+    def _on_generate_character_sheet(self) -> None:
+        """打开“用 ComfyUI 生成定妆照”对话框。"""
+        if self._running:
+            return
+        dialog = tk.Toplevel(self.root)
+        dialog.title("生成角色定妆照（ComfyUI）")
+        dialog.geometry("560x260")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        name_var = tk.StringVar()
+        prompt_var = tk.StringVar()
+        angles_var = tk.StringVar(value="front,side,full")
+
+        ttk.Label(dialog, text="角色名:").grid(row=0, column=0, padx=8, pady=8, sticky="e")
+        ttk.Entry(dialog, textvariable=name_var, width=30).grid(row=0, column=1, padx=8, pady=8)
+        ttk.Label(dialog, text="提示词(可选):").grid(row=1, column=0, padx=8, pady=8, sticky="e")
+        ttk.Entry(dialog, textvariable=prompt_var, width=45).grid(row=1, column=1, padx=8, pady=8)
+        ttk.Label(dialog, text="角度(逗号分隔):").grid(row=2, column=0, padx=8, pady=8, sticky="e")
+        ttk.Entry(dialog, textvariable=angles_var, width=30).grid(row=2, column=1, padx=8, pady=8)
+
+        def on_ok():
+            name = name_var.get().strip()
+            if not name:
+                messagebox.showerror("错误", "角色名不能为空。", parent=dialog)
+                return
+            angles = [a.strip() for a in angles_var.get().split(",") if a.strip()]
+            dialog.destroy()
+            self._start_worker(lambda: self._run_character_sheet_worker(
+                name, prompt_var.get().strip() or None, angles))
+
+        ttk.Button(dialog, text="生成", command=on_ok).grid(row=3, column=0, columnspan=2, pady=12)
+        dialog.bind("<Return>", lambda e: on_ok())
+
+    def _run_character_sheet_worker(self, name: str, prompt: Optional[str],
+                                    angles: Optional[list]) -> None:
+        try:
+            cfg = self._collect_config()
+            self._set_status(f"正在生成 {name} 定妆照…")
+            from modules.character_sheet_generator import CharacterSheetGenerator
+            gen = CharacterSheetGenerator(cfg)
+            results = gen.generate(name, prompt=prompt, angles=angles)
+            paths = "\n".join(r["path"] for r in results)
+            self._set_status("定妆照生成完成")
+            self._post_ui(lambda: messagebox.showinfo(
+                "完成", f"{name} 定妆照已生成：\n{paths}\n\n"
+                        f"请将 reference_image 指向其中一张图。"))
+        except Exception as exc:
+            log.exception("定妆照生成失败：%s", exc)
+            self._set_status("定妆照生成失败")
+            self._post_ui(lambda: messagebox.showerror("错误", f"定妆照生成失败：\n{exc}"))
+        finally:
+            self._set_running(False)
 
     # ------------------------------------------------------------------
     # 工作线程
