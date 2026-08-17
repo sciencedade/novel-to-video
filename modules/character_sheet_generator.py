@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -63,6 +64,8 @@ class CharacterSheetGenerator:
             self.seed = int(config.get("minimax", {}).get("seed", -1))
         except (TypeError, ValueError):
             self.seed = -1
+        if self.seed < 0:
+            self.seed = random.randint(0, 2**31 - 1)
         self._width, self._height = self._parse_resolution(self.resolution)
         self._style_ref_name: Optional[str] = None
 

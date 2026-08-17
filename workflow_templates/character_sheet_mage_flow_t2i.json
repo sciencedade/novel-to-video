@@ -61,8 +61,8 @@
       "images": ["6", 0],
       "filename_prefix": "__PREFIX__",
       "format": "png",
-      "bit_depth": "8-bit",
-      "input_color_space": "sRGB"
+      "format.bit_depth": "8-bit",
+      "format.input_color_space": "sRGB"
     }
   }
 }
